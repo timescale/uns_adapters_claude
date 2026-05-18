@@ -1,0 +1,21 @@
+tag_name,cell,area,line,description,unit,metric_type
+temperature_bearing_de,pump_042,area_01,line_03,Drive-end bearing temperature,degC,Float
+temperature_bearing_nde,pump_042,area_01,line_03,Non-drive-end bearing temperature,degC,Float
+vibration_x_motor_01,pump_042,area_01,line_03,Motor vibration X-axis,mm/s,Float
+vibration_y_motor_01,pump_042,area_01,line_03,Motor vibration Y-axis,mm/s,Float
+pressure_inlet,pump_042,area_01,line_03,Inlet pressure,bar,Float
+pressure_outlet,pump_042,area_01,line_03,Outlet pressure,bar,Float
+flow_rate_main,pump_042,area_01,line_03,Main flow rate,m3/h,Float
+motor_current,pump_042,area_01,line_03,Motor current draw,A,Float
+motor_running,pump_042,area_01,line_03,Motor running status,bool,Boolean
+valve_position_inlet,pump_042,area_01,line_03,Inlet valve position,percent,Float
+temperature_tank_01,tank_101,area_01,line_01,Tank 01 temperature,degC,Float
+level_tank_01,tank_101,area_01,line_01,Tank 01 level,percent,Float
+pressure_tank_01,tank_101,area_01,line_01,Tank 01 pressure,bar,Float
+agitator_speed,tank_101,area_01,line_01,Agitator rotational speed,rpm,Int32
+agitator_running,tank_101,area_01,line_01,Agitator running status,bool,Boolean
+temperature_oven_zone_1,oven_201,area_02,line_01,Oven zone 1 temperature,degC,Float
+temperature_oven_zone_2,oven_201,area_02,line_01,Oven zone 2 temperature,degC,Float
+temperature_oven_zone_3,oven_201,area_02,line_01,Oven zone 3 temperature,degC,Float
+conveyor_speed,conveyor_301,area_02,line_02,Conveyor belt speed,m/min,Float
+conveyor_running,conveyor_301,area_02,line_02,Conveyor running status,bool,Boolean

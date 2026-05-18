@@ -1,0 +1,15 @@
+[project]
+name = "uns-adapter-tutorial"
+version = "0.1.0"
+description = "Agent Teams tutorial: parallel multi-protocol UNS adapter development"
+requires-python = ">=3.11"
+dependencies = [
+    "paho-mqtt>=2.1.0",
+    "psycopg[binary]>=3.3.2",
+    "python-dotenv>=1.0.0",
+    "pyyaml>=6.0",
+    "asyncua>=1.1.0",
+    "pymodbus>=3.6.0",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]

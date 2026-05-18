@@ -1,0 +1,16 @@
+register_address,register_count,tag_name,cell,data_type,word_order,scale_factor,offset,unit
+40001,1,temperature_bearing_de,pump_042,int16,big_endian,0.1,0,degC
+40002,1,temperature_bearing_nde,pump_042,int16,big_endian,0.1,0,degC
+40003,2,vibration_x_motor_01,pump_042,float32,big_endian,1.0,0,mm/s
+40005,2,vibration_y_motor_01,pump_042,float32,big_endian,1.0,0,mm/s
+40007,1,pressure_inlet,pump_042,int16,big_endian,0.01,0,bar
+40008,1,pressure_outlet,pump_042,int16,big_endian,0.01,0,bar
+40009,2,flow_rate_main,pump_042,float32,big_endian,1.0,0,m3/h
+40011,1,motor_current,pump_042,int16,big_endian,0.1,0,A
+40012,1,motor_running,pump_042,bool,big_endian,1,0,bool
+40013,1,valve_position_inlet,pump_042,int16,big_endian,0.1,0,percent
+40101,1,temperature_tank_01,tank_101,int16,big_endian,0.1,0,degC
+40102,1,level_tank_01,tank_101,int16,big_endian,0.1,0,percent
+40103,1,pressure_tank_01,tank_101,int16,big_endian,0.01,0,bar
+40104,1,agitator_speed,tank_101,int16,big_endian,1,0,rpm
+40105,1,agitator_running,tank_101,bool,big_endian,1,0,bool

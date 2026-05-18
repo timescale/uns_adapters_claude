@@ -1,0 +1,27 @@
+broker:
+  host: mqtt.plant-chicago.local
+  port: 1883
+  client_id: opcua_adapter_01
+
+source:
+  endpoint: opc.tcp://plc-area01.plant-chicago.local:4840
+  security_mode: None  # Sign, SignAndEncrypt for production
+  namespace_uri: urn:plant-chicago:opcua:area01
+
+source_timezone: America/Chicago
+stale_threshold_ms: 30000
+poll_interval_ms: 1000
+
+group_id: plant_chicago
+
+tags:
+  - temperature_bearing_de
+  - temperature_bearing_nde
+  - vibration_x_motor_01
+  - vibration_y_motor_01
+  - pressure_inlet
+  - pressure_outlet
+  - flow_rate_main
+  - motor_current
+  - motor_running
+  - valve_position_inlet

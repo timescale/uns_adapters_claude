@@ -1,0 +1,41 @@
+# ISA-95 Equipment Hierarchy — Plant Chicago
+#
+# Six levels, aligned with the canonical TigerData UNS schema:
+#   enterprise / site / area / line / cell / tag_name
+#
+# Sparkplug B topic path maps to this hierarchy as:
+#   spBv1.0/{site}/DDATA/{area}/{line}/{cell}
+# where:
+#   - site       → Sparkplug group_id (e.g., plant_chicago)
+#   - area/line  → Sparkplug edge_node_id (e.g., area_01/line_03)
+#   - cell       → Sparkplug device_id (e.g., pump_042)
+#   - tag_name   → metric name in the payload (e.g., temperature_bearing_de)
+#   - enterprise is implicit (constant per adapter; read from this file)
+
+enterprise: acme_corp
+site: plant_chicago
+
+areas:
+  area_01:
+    name: Production Area 1
+    lines:
+      line_01:
+        name: Mixing Line
+        cells:
+          - tank_101
+      line_03:
+        name: Pumping Station
+        cells:
+          - pump_042
+
+  area_02:
+    name: Production Area 2
+    lines:
+      line_01:
+        name: Heat Treatment
+        cells:
+          - oven_201
+      line_02:
+        name: Packaging
+        cells:
+          - conveyor_301

@@ -1,0 +1,14 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: uns-mqtt-broker
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./config/mosquitto.conf:/mosquitto/config/mosquitto.conf
+    security_opt:
+      - apparmor=unconfined
+    restart: unless-stopped
+
+# TimescaleDB is provided by Tiger Cloud — set TIMESCALE_SERVICE_URL in .env.
+# See: https://www.tigerdata.com/docs/getting-started/latest/services
