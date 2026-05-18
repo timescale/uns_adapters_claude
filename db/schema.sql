@@ -34,7 +34,7 @@ CREATE TABLE uns_namespace (
 
     schema_version  TEXT NOT NULL DEFAULT 'v1',
     description     TEXT,
-    metric_type     TEXT NOT NULL,      -- Sparkplug B type: Float | Int32 | Boolean | String
+    metric_type     TEXT NOT NULL,      -- contract type: Float | Int32 | Boolean | String
     unit            TEXT,
 
     UNIQUE (enterprise, site, area, line, cell, tag_name)
@@ -43,7 +43,7 @@ CREATE UNIQUE INDEX idx_uns_namespace_path ON uns_namespace (uns_path);
 
 
 -- 2. Time-series readings. Narrow fact table, FK-enforced against the namespace.
---    Quality is preserved from the adapter (GOOD | BAD | STALE) so downstream
+--    Quality is preserved from the client (GOOD | BAD | STALE) so downstream
 --    consumers can filter or weight accordingly.
 CREATE TABLE tag_history (
     ts          TIMESTAMPTZ      NOT NULL,
@@ -53,7 +53,7 @@ CREATE TABLE tag_history (
 );
 
 -- Dedup + device-time query acceleration in a single index.
--- Batch ingester uses INSERT ... ON CONFLICT (ts, tag_id) DO NOTHING.
+-- Clients batch-upsert with INSERT ... ON CONFLICT (ts, tag_id) DO NOTHING (logic in shared/db.py).
 CREATE UNIQUE INDEX idx_tag_history_dedup ON tag_history (ts, tag_id);
 
 -- Convert to hypertable; 1-day chunks is a safe starting point for plant telemetry.
@@ -64,7 +64,7 @@ SELECT create_hypertable(
 );
 
 
--- 3. Dead-letter table. Rows rejected by ingester governance checks land here
+-- 3. Dead-letter table. Rows rejected by client governance checks land here
 --    (unknown tag, malformed payload, missing timestamp) so they can be
 --    investigated instead of silently dropped.
 CREATE TABLE dead_letter (
@@ -83,12 +83,3 @@ CREATE INDEX idx_dead_letter_received_at ON dead_letter (received_at DESC);
 --    guidance.
 -- SELECT add_compression_policy('tag_history', INTERVAL '7 days');
 -- SELECT add_retention_policy('tag_history', INTERVAL '2 years');
-
-
--- Notes on wire format → storage:
---   * Payload timestamp_ms (int64 epoch ms, Sparkplug B) → ts TIMESTAMPTZ
---     via to_timestamp(timestamp_ms / 1000.0).
---   * Sparkplug topic spBv1.0/{group_id}/DDATA/{edge_node_id}/{device_id}
---     maps to: group_id=site, edge_node_id="{area}/{line}", device_id=cell.
---     Metric name in the payload = tag_name.
---   * Enterprise comes from config (equipment_hierarchy.yaml top-level).

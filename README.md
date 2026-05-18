@@ -1,77 +1,79 @@
-# Building UNS Adapters with Claude Code Agent Teams
+# Unify Your Plant-Floor Data with Claude Code and TimescaleDB
 
-Companion repository for *"Building UNS Adapters with Claude Code Agent Teams: A Hybrid Framework for IIoT Integration"*, published on the [TigerData blog](https://www.tigerdata.com/blog).
+Companion repository for *"Unify Your Plant-Floor Data with Claude Code and TimescaleDB"*, published on the [TigerData blog](https://www.tigerdata.com/blog).
+
+An Agent Team builds one collection client per protocol — Modbus-TCP, OPC UA, MQTT — each reading from its source and writing directly into a single governed TimescaleDB table. No broker on the data path, no separate ingestion service.
 
 ## Agent Team Composition
 
-| Role | Agent Definition | Model | Purpose |
-|---|---|---|---|
-| Lead | Your session | opus | Assigns tasks, reviews against contract, catches drift |
-| OPC UA Adapter | `.claude/agents/opcua-adapter.md` | sonnet | Builds `adapters/opcua/`: subscriptions, type flattening |
-| Modbus Adapter | `.claude/agents/modbus-adapter.md` | sonnet | Builds `adapters/modbus/`: register mapping, scale factors |
-| Historian Adapter | `.claude/agents/historian-adapter.md` | sonnet | Builds `adapters/historian/`: naive timestamps, tag translation |
-| Contract Reviewer | `.claude/agents/contract-reviewer.md` | sonnet | Reviews all three adapters against CLAUDE.md, read-only |
-| TimescaleDB Validator | `.claude/agents/timescale-validator.md` | opus | Validates landed data, IIoT-grounded insights |
+| Agent | Role |
+|---|---|
+| Lead — your session | Assigns tasks, enforces `CLAUDE.md`, reviews output |
+| `modbus-client` | Builds `clients/modbus/`: polls Modbus-TCP device, writes readings to TimescaleDB |
+| `opcua-client` | Builds `clients/opcua/`: subscribes to OPC UA server, writes readings to TimescaleDB |
+| `mqtt-client` | Builds `clients/mqtt/`: subscribes to MQTT broker, writes readings to TimescaleDB |
+| `contract-reviewer` | Static review of all three clients against `CLAUDE.md` (read-only) |
+| `timescale-validator` | End-to-end pipeline check against data landed in TimescaleDB |
 
 ## Project Structure
 
 ```
 .
-├── CLAUDE.md                          # The UNS data contract (binding for all adapters)
+├── CLAUDE.md                          # UNS data contract (binding for all clients)
 ├── .claude/
 │   ├── settings.json                  # Agent Teams enabled + teammate permissions
 │   ├── agents/
-│   │   ├── opcua-adapter.md           # OPC UA teammate definition
-│   │   ├── modbus-adapter.md          # Modbus teammate definition
-│   │   ├── historian-adapter.md       # Historian teammate definition
-│   │   ├── contract-reviewer.md       # Cross-adapter reviewer definition
-│   │   └── timescale-validator.md     # End-to-end pipeline + DB validation
+│   │   ├── modbus-client.md
+│   │   ├── opcua-client.md
+│   │   ├── mqtt-client.md
+│   │   ├── contract-reviewer.md
+│   │   └── timescale-validator.md
 │   ├── rules/
 │   │   ├── shared-code.md             # Import from shared/, never redefine
 │   │   ├── file-ownership.md          # Which agent writes where
 │   │   ├── python-conventions.md      # uv, naming, imports
-│   │   └── definition-of-done.md      # Adapter completion criteria
+│   │   └── definition-of-done.md      # Client completion criteria
 │   └── skills/
-│       ├── run-tests/SKILL.md         # Run adapter unit tests
-│       ├── validate-contract/SKILL.md # Static review against CLAUDE.md
-│       └── validate-pipeline/SKILL.md # End-to-end pipeline validation
+│       ├── run-tests/SKILL.md
+│       ├── validate-contract/SKILL.md
+│       └── validate-pipeline/SKILL.md
+├── clients/                           # Built by the Agent Team during the tutorial run
+│   ├── modbus/
+│   ├── opcua/
+│   └── mqtt/
 ├── shared/
-│   ├── models.py                      # Metric, Quality, MetricType, SparkplugMessage
-│   └── validation.py                  # Contract validation (topic paths, naming, tag lookup)
+│   ├── models.py                      # Reading, Quality, MetricType
+│   ├── validation.py                  # validate_reading()
+│   └── db.py                          # DBWriter: tag_id resolution + batch upsert
 ├── contracts/
-│   ├── tag_database.csv               # 20 tags: tag_name, cell, area, line, metric_type
-│   ├── equipment_hierarchy.yaml       # ISA-95 hierarchy for acme_corp/plant_chicago
-│   ├── register_map.csv               # Modbus register-to-tag mapping (15 registers)
-│   └── historian_tag_map.csv          # PI historian tag-to-UNS tag mapping (5 tags)
+│   ├── tag_database.csv               # Canonical tag names, hierarchy, metric types
+│   ├── equipment_hierarchy.yaml       # ISA-95 hierarchy (enterprise through cell)
+│   ├── register_map.csv               # Modbus register → tag mapping with scale factors
+│   ├── opcua_node_map.csv             # OPC UA node IDs → contract tag names
+│   └── mqtt_topic_map.csv             # Source MQTT topics → contract tag names
 ├── config/
-│   ├── opcua.yaml                     # OPC UA adapter config (10 tags, area_01/line_03)
-│   ├── modbus.yaml                    # Modbus adapter config (15 tags, area_01)
-│   └── historian.yaml                 # Historian adapter config (5 tags, area_02)
+│   ├── modbus.yaml
+│   ├── opcua.yaml
+│   └── mqtt.yaml
 ├── db/
-│   └── schema.sql                     # uns_namespace + tag_history + dead_letter
-├── ingester/
-│   └── main.py                        # MQTT -> TimescaleDB reference ingester
+│   └── schema.sql                     # uns_namespace, tag_history (hypertable), dead_letter
 ├── scripts/
-│   ├── setup.sh                       # One-command environment scaffold + pre-flight checks
-│   ├── seed_namespace.py              # Seeds uns_namespace from contracts
-│   ├── simulate_source.py             # Publishes fake Sparkplug DDATA for all 20 tags
-│   └── validate_pipeline.py           # End-to-end pipeline validation (6 checks + health)
-├── docker-compose.yml                 # Mosquitto broker on port 1883
-└── adapters/                          # Created by the Agent Team (not in repo)
-    ├── opcua/src/publisher.py
-    ├── modbus/src/publisher.py
-    └── historian/src/publisher.py
+│   ├── setup.sh                       # One-command environment scaffold
+│   ├── seed_namespace.py              # Seeds uns_namespace from contracts/
+│   ├── simulate_source.py             # Stands up three fake sources in-process
+│   └── validate_pipeline.py           # Six-check end-to-end pipeline validation
+├── docker-compose.yml                 # Mosquitto broker on port 1883 (MQTT source)
+└── pyproject.toml
 ```
 
 ## Requirements
 
 - Python 3.11+ with [uv](https://docs.astral.sh/uv/)
-- [Docker](https://www.docker.com/) (for the local Mosquitto broker)
-- A [Tiger Cloud](https://www.tigerdata.com/) instance (free tier works)
-- Claude Code 2.1.110 with Agent Teams enabled (see [Claude Code version](#claude-code-version) below)
-- [tmux](https://github.com/tmux/tmux/wiki) (required for Agent Teams split-pane mode)
-
-> **Scope note:** Adapters publish JSON over MQTT, not Sparkplug B protobuf. JSON keeps the contract inspectable for tutorial purposes. For protobuf encoding in production, use [Eclipse Tahu](https://github.com/eclipse/tahu).
+- [Docker](https://www.docker.com/) — for the Mosquitto MQTT broker (one of the three sources)
+- `psql` (`postgresql-client`)
+- A [Tiger Cloud](https://www.tigerdata.com/) instance (free tier works) — or any TimescaleDB service URL
+- Claude Code 2.1.110 with Agent Teams enabled ([see version note below](#claude-code-version))
+- [tmux](https://github.com/tmux/tmux/wiki) — required for Agent Teams split-pane mode
 
 ### Claude Code version
 
@@ -105,7 +107,7 @@ When you're done with the tutorial, undo the pin:
 # Remove the auto-update guard from ~/.bashrc (or zshrc), then unset it for the current shell
 unset DISABLE_AUTOUPDATER
 
-# Reinstall the latest release (the installer flips the symlink)
+# Reinstall the latest release
 curl -fsSL https://claude.ai/install.sh | bash
 
 claude --version
@@ -119,11 +121,29 @@ claude --version
 bash scripts/setup.sh
 ```
 
-Checks prerequisites, installs dependencies, starts the MQTT broker, applies the schema to your Tiger Data service, and seeds the UNS namespace. Prompts for your Tiger Data service URL if `.env` doesn't exist yet.
+One command covers everything: checks prerequisites, installs Python dependencies (`uv sync`), creates `.env` from `.env.example` (prompts for your Tiger Data service URL if needed), starts the Mosquitto broker, applies `db/schema.sql` to your TimescaleDB instance, and seeds `uns_namespace` from `contracts/`.
 
-### 2. Run the Agent Team
+### 2. Start the simulator
 
-Start Claude Code:
+In a dedicated terminal — keep it running while the Agent Team works:
+
+```bash
+uv run scripts/simulate_source.py
+```
+
+Stands up all three fake sources in-process: a Modbus-TCP server (`pymodbus`), an OPC UA server (`asyncua`), and a publisher to the local Mosquitto broker (`paho-mqtt`). No hardware required.
+
+```bash
+# Slower sweep rate — useful when stepping through the tutorial
+uv run scripts/simulate_source.py --rate 2.0
+
+# Fixed run — stops after N sweeps
+uv run scripts/simulate_source.py --rate 1.0 --iterations 10
+```
+
+### 3. Run the Agent Team
+
+In a second terminal, inside tmux:
 
 ```bash
 claude
@@ -132,14 +152,17 @@ claude
 Paste this prompt to launch the team:
 
 ```
-Create a new team and build the three protocol adapters. Spawn the adapter teammates in parallel, review with contract-reviewer, then validate the pipeline with timescale-validator.
+Create a new team and build the three collection clients. Spawn modbus-client, opcua-client, and mqtt-client in parallel. When all three complete, spawn contract-reviewer. When review passes, spawn timescale-validator.
 ```
 
-> Validation runs as the `/validate-pipeline` skill inside Claude Code, or manually via `uv run scripts/validate_pipeline.py`.
+The Lead is your main Claude Code session — no separate orchestrator agent. The three client teammates build `clients/modbus/`, `clients/opcua/`, and `clients/mqtt/` in parallel, each reading from the simulated sources and writing directly into `tag_history`. `contract-reviewer` follows with a read-only static review against `CLAUDE.md`. `timescale-validator` runs the `/validate-pipeline` skill and interprets the result.
 
-### 3. Verify the UNS in the database
+> Validation is also runnable at any time from the main session: `/validate-pipeline`  
+> Or manually: `uv run scripts/validate_pipeline.py`
 
-Open the Tiger Cloud SQL Editor and run these queries to confirm the ISA-95 hierarchy and adapter data landed correctly:
+### 4. Verify the UNS
+
+Open the Tiger Cloud SQL Editor and confirm data landed correctly:
 
 ```sql
 -- Full UNS namespace: six-level ISA-95 hierarchy materialized in Postgres
@@ -149,14 +172,14 @@ ORDER BY uns_path;
 ```
 
 ```sql
--- Readings per adapter area, confirms all three adapters contributed data
+-- Readings per area — confirms all three clients contributed data
 SELECT
     ns.area,
     ns.line,
     ns.cell,
-    COUNT(*) AS readings,
-    MIN(th.ts) AS first_reading,
-    MAX(th.ts) AS last_reading
+    COUNT(*)         AS readings,
+    MIN(th.ts)       AS first_reading,
+    MAX(th.ts)       AS last_reading
 FROM tag_history th
 JOIN uns_namespace ns ON ns.id = th.tag_id
 GROUP BY ns.area, ns.line, ns.cell
@@ -164,7 +187,7 @@ ORDER BY ns.area, ns.line, ns.cell;
 ```
 
 ```sql
--- Latest value per tag, the UNS as a live snapshot
+-- Latest value per tag — the UNS as a live snapshot
 SELECT
     ns.uns_path,
     th.ts,
@@ -178,18 +201,19 @@ WHERE th.ts = (
 ORDER BY ns.uns_path;
 ```
 
-If anything looks off, check `dead_letter` for rejected payloads:
+If anything looks off, check `dead_letter` for rejected readings:
 
 ```sql
-SELECT reason, count(*) FROM dead_letter GROUP BY 1;
+SELECT source, reason, count(*) FROM dead_letter GROUP BY 1, 2;
 ```
 
-### 4. Explore a failure mode (optional)
+### 5. Explore the failure path (optional)
 
-Simulate a naive-timestamp leak via the Tiger Cloud SQL Editor:
+Stay in the same session and inject a naive-timestamp leak via the Tiger Cloud SQL Editor:
 
 ```sql
--- Shift historian timestamps back 5 hours (simulates naive local time as UTC)
+-- Shift area_02 timestamps back 5 hours
+-- (simulates naive local time written as UTC)
 UPDATE tag_history
 SET ts = ts - INTERVAL '5 hours'
 WHERE tag_id IN (
@@ -197,7 +221,7 @@ WHERE tag_id IN (
 );
 ```
 
-Re-run validation. Check 6 will flag `area_02` as ~5 hours behind the other areas.
+Re-run validation from your main session: `/validate-pipeline`. Six checks, one fails — `area_02` is five hours behind `area_01`. The Lead picks up the failure and reasons through it.
 
 Revert when done:
 

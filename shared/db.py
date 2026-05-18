@@ -22,9 +22,12 @@ Usage:
 """
 
 import json
+import logging
 from pathlib import Path
 
 import psycopg
+
+log = logging.getLogger(__name__)
 
 from .models import Reading
 from .validation import validate_reading
@@ -207,8 +210,16 @@ class DBWriter:
         except psycopg.errors.UndefinedColumn:
             # Schema not yet migrated (topic → source); skip gracefully.
             self.conn.rollback()
-        except Exception:
+        except Exception as exc:
             self.conn.rollback()
+            log.warning(
+                "dead_letter write failed — reading dropped "
+                "(source=%r tag=%r reason=%r): %s",
+                source,
+                reading.tag_name,
+                reason,
+                exc,
+            )
 
     # ------------------------------------------------------------------
     # Context manager
