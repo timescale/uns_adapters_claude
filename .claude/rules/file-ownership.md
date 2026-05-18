@@ -5,14 +5,14 @@ its designated directory:
 
 | Agent | Writes to |
 |---|---|
-| `opcua-adapter` | `adapters/opcua/` |
-| `modbus-adapter` | `adapters/modbus/` |
-| `historian-adapter` | `adapters/historian/` |
+| `modbus-client` | `clients/modbus/` |
+| `opcua-client` | `clients/opcua/` |
+| `mqtt-client` | `clients/mqtt/` |
 | `contract-reviewer` | nothing (read-only) |
 | `timescale-validator` | `scripts/`, `reports/` |
 
 Two teammates must NEVER write to the same file. Never modify `shared/`,
-`contracts/`, `config/`, `db/`, `ingester/`, or `CLAUDE.md`.
+`contracts/`, `config/`, `db/`, or `CLAUDE.md`.
 
 ## Team Lifecycle
 

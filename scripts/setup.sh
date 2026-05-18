@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# UNS Adapter Tutorial — One-command environment setup
+# UNS Collection Clients — One-command environment setup
 # Usage: bash scripts/setup.sh
 set -euo pipefail
 
@@ -13,7 +13,7 @@ warn()  { echo -e "${YELLOW}[!!]${NC} $1"; }
 fail()  { echo -e "${RED}[FAIL]${NC} $1"; exit 1; }
 
 echo "======================================================================"
-echo " UNS Adapter Tutorial — Environment Setup"
+echo " UNS Collection Clients — Environment Setup"
 echo "======================================================================"
 echo ""
 
@@ -92,6 +92,9 @@ fi
 info "Environment loaded"
 
 # ── MQTT broker ────────────────────────────────────────────────────────
+# The MQTT broker (Mosquitto) is one of the three data sources the
+# mqtt-client collects from. Start it here so it is ready when the
+# simulator and Agent Team run.
 
 echo ""
 echo "Starting MQTT broker..."
@@ -126,13 +129,13 @@ echo ""
 echo "Running pre-flight checks..."
 PREFLIGHT_OK=true
 
-# Broker reachable
+# MQTT broker reachable (required by mqtt-client and simulator)
 MQTT_HOST="${MQTT_BROKER_HOST:-localhost}"
 MQTT_PORT="${MQTT_BROKER_PORT:-1883}"
 if python3 -c "import socket; s=socket.create_connection(('$MQTT_HOST',$MQTT_PORT),2); s.close()" 2>/dev/null; then
     info "MQTT broker reachable ($MQTT_HOST:$MQTT_PORT)"
 else
-    warn "MQTT broker not reachable — agents that run the pipeline will fail"
+    warn "MQTT broker not reachable — mqtt-client and simulator will fail"
     PREFLIGHT_OK=false
 fi
 
@@ -145,7 +148,7 @@ else
 fi
 
 # Python deps importable
-if uv run python -c "import paho.mqtt, psycopg, yaml, pytest" 2>/dev/null; then
+if uv run python -c "import psycopg, yaml, pytest" 2>/dev/null; then
     info "All Python packages importable"
 else
     warn "Some Python packages failed to import — run: uv sync"
@@ -172,13 +175,13 @@ fi
 echo "======================================================================"
 echo ""
 echo "  MQTT broker:   $MQTT_HOST:$MQTT_PORT"
+echo "  Modbus source: ${MODBUS_SOURCE_HOST:-localhost}:${MODBUS_SOURCE_PORT:-5020}  (started by simulator)"
+echo "  OPC UA source: ${OPCUA_SOURCE_HOST:-localhost}:${OPCUA_SOURCE_PORT:-4840}  (started by simulator)"
 echo "  TimescaleDB:   connected (${TAG_COUNT:-0} tags seeded)"
 echo "  Dependencies:  installed"
 echo ""
-echo "  Quick test (optional):"
-echo "    Terminal 1:  uv run ingester/main.py"
-echo "    Terminal 2:  uv run scripts/simulate_source.py --rate 1.0 --iterations 5"
-echo ""
-echo "  Run the Agent Team:"
-echo "    claude"
+echo "  Next steps:"
+echo "    Terminal 1:  uv run scripts/simulate_source.py              # continuous, 1s sweeps (Ctrl+C to stop)"
+echo "                 uv run scripts/simulate_source.py --rate 2.0   # slower — 2s between sweeps"
+echo "    Terminal 2:  claude                                          # launch the Agent Team"
 echo ""

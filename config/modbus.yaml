@@ -1,27 +1,21 @@
-broker:
-  host: mqtt.plant-chicago.local
-  port: 1883
-  client_id: modbus_adapter_01
+# Modbus-TCP client config — Plant Chicago, pump_042 + tank_101 (area_01)
+#
+# source.host/port match MODBUS_SOURCE_HOST/PORT in .env (simulated server).
+# DB URL comes from TIMESCALE_SERVICE_URL in env — not configured here.
 
 source:
-  protocol: tcp          # tcp or rtu
-  host: 192.168.10.50    # Modbus gateway IP
-  port: 502
+  protocol: tcp
+  host: localhost          # override via MODBUS_SOURCE_HOST
+  port: 5020               # override via MODBUS_SOURCE_PORT
   unit_id: 1
-  # RTU settings (unused for TCP):
-  # serial_port: /dev/ttyUSB0
-  # baudrate: 9600
-  # parity: N
 
 source_timezone: America/Chicago
-stale_threshold_ms: 30000
 poll_interval_ms: 1000
-
-group_id: plant_chicago
-
 register_map: contracts/register_map.csv
 
 tags:
+  # pump_042 (area_01/line_03) — Modbus client scope
+  # tank_101 tags are collected via OPC UA (opcua_node_map.csv)
   - temperature_bearing_de
   - temperature_bearing_nde
   - vibration_x_motor_01
@@ -32,8 +26,3 @@ tags:
   - motor_current
   - motor_running
   - valve_position_inlet
-  - temperature_tank_01
-  - level_tank_01
-  - pressure_tank_01
-  - agitator_speed
-  - agitator_running

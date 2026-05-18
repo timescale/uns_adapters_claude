@@ -1,0 +1,9 @@
+ns,node_id,tag_name,cell,data_type,unit
+2,TK101.TEMP,temperature_tank_01,tank_101,Float,degC
+2,TK101.LEVEL,level_tank_01,tank_101,Float,percent
+2,TK101.PRESS,pressure_tank_01,tank_101,Float,bar
+2,TK101.AGT.SPEED,agitator_speed,tank_101,Int32,rpm
+2,TK101.AGT.RUN,agitator_running,tank_101,Boolean,bool
+2,OV201.TEMP1,temperature_oven_zone_1,oven_201,Float,degC
+2,OV201.TEMP2,temperature_oven_zone_2,oven_201,Float,degC
+2,OV201.TEMP3,temperature_oven_zone_3,oven_201,Float,degC

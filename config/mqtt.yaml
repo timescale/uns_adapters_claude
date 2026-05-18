@@ -1,0 +1,19 @@
+# MQTT client config — Plant Chicago, conveyor_301 (area_02)
+#
+# source.host/port match MQTT_BROKER_HOST/PORT in .env (Mosquitto via docker-compose).
+# Timestamps in the payload are epoch-ms UTC — no timezone conversion needed.
+# DB URL comes from TIMESCALE_SERVICE_URL in env — not configured here.
+
+source:
+  host: localhost           # override via MQTT_BROKER_HOST
+  port: 1883                # override via MQTT_BROKER_PORT
+  client_id: mqtt_client_01
+
+source_timezone: UTC        # simulator publishes ts_ms (epoch-ms UTC)
+subscribe_topics:
+  - "plant_chicago/telemetry/conveyor_301/#"
+topic_map: contracts/mqtt_topic_map.csv
+
+tags:
+  - conveyor_speed
+  - conveyor_running

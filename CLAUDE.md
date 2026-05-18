@@ -39,9 +39,9 @@ A reading maps 1:1 to a `tag_history` row. The `Reading` model in
 1. **Validate first.** Before writing, every reading MUST pass
    `shared.validation.validate_reading()` — tag name known, snake_case,
    `ts` timezone-aware, value type consistent with the tag's `metric_type`.
-2. **Resolve the tag.** Look up `tag_id` from `uns_namespace` by `tag_name`
-   and the ISA-95 hierarchy. A reading whose tag is not in `uns_namespace`
-   is rejected and routed to `dead_letter` — never written to `tag_history`.
+2. **Resolve the tag.** Look up `tag_id` from `uns_namespace` by `tag_name`.
+   A reading whose tag is not in `uns_namespace` is rejected and routed to
+   `dead_letter` — never written to `tag_history`.
 3. **Insert into `tag_history`.** One row per reading:
    ```sql
    INSERT INTO tag_history (ts, tag_id, value, quality)

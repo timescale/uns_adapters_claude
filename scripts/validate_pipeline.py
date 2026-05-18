@@ -1,23 +1,17 @@
-"""End-to-end pipeline validation for UNS adapters.
+"""End-to-end pipeline validation for UNS collection clients.
 
-Runs the simulator, waits for the ingester to flush, then queries TimescaleDB
-to verify data landed correctly. Designed to be run by the TimescaleDB
-Validator agent or by a human after an Agent Team build.
+Queries TimescaleDB to verify that data has landed correctly. Run this
+standalone after the simulator and clients have collected data, or invoke
+it via the /validate-pipeline skill.
 
 Usage:
-    # With ingester already running in another terminal:
     uv run scripts/validate_pipeline.py
-
-    # Full pipeline (starts simulator, waits, then validates):
-    uv run scripts/validate_pipeline.py --simulate --sweeps 5 --wait 15
 """
 
 import argparse
 import csv
 import os
-import subprocess
 import sys
-import time
 from pathlib import Path
 
 try:
@@ -123,7 +117,13 @@ def check_foreign_keys(conn) -> dict:
 
 
 def check_dead_letter(conn) -> dict:
-    """Check dead_letter table for rejected payloads."""
+    """Check dead_letter table for rejected readings.
+
+    Each row in dead_letter represents a reading rejected by a client's
+    governance checks (unknown tag, bad value, missing timestamp). The
+    source column (dead_letter.source) identifies which protocol client
+    (Modbus, OPC UA, MQTT) routed the reading here.
+    """
     cur = conn.execute("""
         SELECT reason, COUNT(*) AS cnt
         FROM dead_letter
@@ -187,7 +187,7 @@ def check_cross_area_timestamp_drift(conn) -> dict:
 
     Compares the average latest timestamp per area. If one area is offset
     from the others by a round number of hours (1-12h), it's almost certainly
-    a naive-timestamp leak: the adapter published local time as if it were UTC.
+    a naive-timestamp leak: the client published local time as if it were UTC.
     """
     # Use a wide window (24h) to catch data that drifted far from the expected time.
     # A naive-timestamp leak can shift data by many hours — a 1h window would
@@ -239,8 +239,8 @@ def check_cross_area_timestamp_drift(conn) -> dict:
     }
 
 
-def adapter_health(conn) -> dict:
-    """Per-adapter health: row counts and latest reading by area."""
+def client_health(conn) -> dict:
+    """Per-client health: row counts and latest reading by area."""
     cur = conn.execute("""
         SELECT
             ns.area,
@@ -253,56 +253,19 @@ def adapter_health(conn) -> dict:
         ORDER BY ns.area
     """)
     rows = cur.fetchall()
-    adapters = {}
+    clients = {}
     for area, row_count, tag_count, last_reading in rows:
-        adapters[area] = {
+        clients[area] = {
             "rows": row_count,
             "tags": tag_count,
             "last_reading": str(last_reading),
         }
-    return adapters
-
-
-def check_broker():
-    """Verify the MQTT broker is reachable."""
-    import socket
-    host = os.getenv("MQTT_BROKER_HOST", "localhost")
-    port = int(os.getenv("MQTT_BROKER_PORT", "1883"))
-    try:
-        sock = socket.create_connection((host, port), timeout=3)
-        sock.close()
-        return True
-    except (ConnectionRefusedError, OSError):
-        return False
-
-
-def run_simulation(sweeps: int, wait: int):
-    """Run the simulator and wait for ingester to flush."""
-    if not check_broker():
-        host = os.getenv("MQTT_BROKER_HOST", "localhost")
-        port = os.getenv("MQTT_BROKER_PORT", "1883")
-        print(f"\nFAIL: MQTT broker not reachable at {host}:{port}")
-        print("  Run: docker compose up -d")
-        sys.exit(1)
-    print(f"\nRunning simulator: {sweeps} sweeps...")
-    subprocess.run(
-        ["uv", "run", "scripts/simulate_source.py", "--rate", "0.5",
-         "--iterations", str(sweeps)],
-        check=True,
-    )
-    print(f"Waiting {wait}s for ingester to flush...")
-    time.sleep(wait)
+    return clients
 
 
 def main():
     parser = argparse.ArgumentParser(description="Validate UNS pipeline end-to-end")
-    parser.add_argument("--simulate", action="store_true",
-                        help="Run simulator before validating")
-    parser.add_argument("--sweeps", type=int, default=5,
-                        help="Number of simulator sweeps (default: 5)")
-    parser.add_argument("--wait", type=int, default=15,
-                        help="Seconds to wait after simulation for flush (default: 15)")
-    args = parser.parse_args()
+    parser.parse_args()
 
     print("=" * 70)
     print(" UNS Pipeline Validation")
@@ -310,22 +273,16 @@ def main():
 
     conn = get_connection()
 
-    # Auto-detect: if tag_history is empty and --simulate not explicitly passed,
-    # warn the user. If --simulate is passed, run it.
+    # If tag_history is empty, warn and exit — run the simulator and clients first.
     cur = conn.execute("SELECT COUNT(*) FROM tag_history")
     row_count = cur.fetchone()[0]
-
-    if args.simulate:
-        run_simulation(args.sweeps, args.wait)
-        # Refresh connection after simulation to see new data
-        conn.close()
-        conn = get_connection()
-    elif row_count == 0:
-        print("\n  tag_history is empty. Run with --simulate to populate,")
-        print("  or ensure the ingester + adapters/simulator have run first.")
-        print("  Usage: uv run scripts/validate_pipeline.py --simulate --sweeps 5 --wait 15")
+    if row_count == 0:
+        print("\n  tag_history is empty.")
+        print("  Run the simulator and clients first, then re-run this script:")
+        print("    uv run scripts/simulate_source.py")
         conn.close()
         sys.exit(1)
+
     expected_tags = load_expected_tags()
     all_pass = True
 
@@ -363,7 +320,7 @@ def main():
     print("\n[4/6] Dead letter analysis...")
     result = check_dead_letter(conn)
     status = "PASS" if result["pass"] else "FAIL"
-    print(f"  {status}: {result['total']} rejected payloads")
+    print(f"  {status}: {result['total']} rejected readings")
     if result["reasons"]:
         for reason, cnt in result["reasons"].items():
             print(f"    {reason}: {cnt}")
@@ -391,14 +348,14 @@ def main():
             print(f"    {area}: latest = {ts}")
     all_pass &= result["pass"]
 
-    # Adapter health summary
+    # Client health summary
     print("\n" + "-" * 70)
-    print("Adapter health (by area):")
-    adapters = adapter_health(conn)
-    for area, data in adapters.items():
+    print("Client health (by area):")
+    clients = client_health(conn)
+    for area, data in clients.items():
         print(f"  {area}: {data['tags']} tags, {data['rows']} rows, last: {data['last_reading']}")
 
-    if not adapters:
+    if not clients:
         print("  No data in tag_history.")
 
     conn.close()

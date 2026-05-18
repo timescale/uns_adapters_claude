@@ -1,0 +1,3 @@
+mqtt_topic,tag_name,cell,data_type,unit
+plant_chicago/telemetry/conveyor_301/conveyor_speed,conveyor_speed,conveyor_301,Float,m/min
+plant_chicago/telemetry/conveyor_301/conveyor_running,conveyor_running,conveyor_301,Boolean,bool

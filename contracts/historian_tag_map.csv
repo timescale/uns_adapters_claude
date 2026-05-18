@@ -1,6 +1,0 @@
-historian_tag,tag_name,cell,notes
-CHI.AREA02.LINE01.OVEN201.ZONE1_TEMP,temperature_oven_zone_1,oven_201,PI point — zone 1 thermocouple
-CHI.AREA02.LINE01.OVEN201.ZONE2_TEMP,temperature_oven_zone_2,oven_201,PI point — zone 2 thermocouple
-CHI.AREA02.LINE01.OVEN201.ZONE3_TEMP,temperature_oven_zone_3,oven_201,PI point — zone 3 thermocouple
-CHI.AREA02.LINE02.CONV301.SPEED,conveyor_speed,conveyor_301,PI point — belt speed encoder
-CHI.AREA02.LINE02.CONV301.RUNNING,conveyor_running,conveyor_301,PI point — running discrete

@@ -1,62 +1,60 @@
 ---
 name: validate-contract
-description: Review adapter code against the UNS data contract in CLAUDE.md
+description: Static review of collection-client code against the UNS data contract in CLAUDE.md
 ---
 
 # Validate Contract
 
-Static review of adapter code against every rule in the UNS data contract.
-Reports violations with file paths, line numbers, and required fixes.
+Static, reasoning-based review of each collection client against the UNS data
+contract in `CLAUDE.md`. This is a judgment task, not a script — read the
+client code and the contract, then report violations with file paths, line
+numbers, and required fixes.
 
 ## Usage
 
-- `/validate-contract` — review all three adapters
-- `/validate-contract opcua` — review the OPC UA adapter only
+- `/validate-contract` — review all three clients
+- `/validate-contract modbus` — review the Modbus client only
 
 ## Checklist
 
-For each adapter, check every rule from CLAUDE.md:
-
-### Topic Paths
-- [ ] Format: `spBv1.0/{group_id}/DDATA/{area}/{line}/{cell}`
-- [ ] All segments are snake_case (no hyphens, no camelCase, no uppercase)
-- [ ] group_id matches config `group_id` field
-- [ ] area/line/cell match values in `contracts/tag_database.csv`
+For each client, check every rule from `CLAUDE.md`:
 
 ### Naming
-- [ ] All metric names are snake_case
-- [ ] All metric names exist in `contracts/tag_database.csv` (column `tag_name`)
+- [ ] All tag names are snake_case (no hyphens, no camelCase, no uppercase)
+- [ ] All tag names exist in `contracts/tag_database.csv` (column `tag_name`)
 - [ ] No aliases, abbreviations, or "friendly names"
+- [ ] Source identifiers resolve to contract tags via the client's map file
+      (`register_map.csv` / `opcua_node_map.csv` / `mqtt_topic_map.csv`)
 
 ### Timestamps
-- [ ] Field name is `timestamp_ms` (not `ts`, `time`, or `timestamp`)
-- [ ] Value is UTC epoch milliseconds (int, not float, not ISO string)
-- [ ] Naive timestamp sources log the warning: `"Naive timestamp from {source}, assuming {timezone}"`
-- [ ] Timezone conversion uses `source_timezone` from config
-- [ ] Adapters that stamp at read time document the clock source
+- [ ] Values written to `tag_history.ts` are timezone-aware UTC
+- [ ] Naive timestamp sources convert using `source_timezone` from
+      `config/{client}.yaml` and log: `"Naive timestamp from {source}, assuming {timezone}"`
+- [ ] Clients that stamp at read time document the clock source
+- [ ] No client silently assumes UTC for a naive timestamp
 
-### Payloads
-- [ ] JSON structure: `{"timestamp_ms": int, "metrics": [...]}`
-- [ ] Each metric has: `name`, `value`, `type`, `quality`
-- [ ] Types are from the contract: `Int32`, `Float`, `Boolean` only
-- [ ] Quality flags: `GOOD`, `BAD`, `STALE` — no other values
+### Write Target
+- [ ] Readings are validated with `validate_reading()` before writing
+- [ ] Writes go through `DBWriter` — no hand-rolled connections or SQL
+- [ ] `tag_id` is resolved from `uns_namespace`; unresolved tags go to `dead_letter`
+- [ ] Value types are consistent with the tag's `metric_type` (`Int32`, `Float`, `Boolean`)
+- [ ] Quality flags are `GOOD`, `BAD`, or `STALE` — no other values
 
 ### Shared Code
-- [ ] Adapters import from `shared.models` — never redefine `Metric`, `MetricType`, etc.
-- [ ] Tests use `shared.validation.validate_message()`
-- [ ] No duplicate validation logic inside adapter code
+- [ ] Clients import `Reading` from `shared.models` — never redefine it
+- [ ] No duplicate validation or DB-write logic inside client code
 
 ### Tests
-- [ ] Each adapter has unit tests
+- [ ] Each client has unit tests
 - [ ] Tests mock the protocol client (no live server required)
-- [ ] Tests verify contract compliance via `validate_message()`
+- [ ] Tests verify contract compliance via `validate_reading()`
 
 ## Report Format
 
-For each adapter:
+For each client:
 
 ```
-## {adapter_name} — {PASS | FAIL}
+## {client_name} — {PASS | FAIL}
 
 Violations:
 - {file}:{line} — {rule violated} — {what's wrong} — Fix: {what to change}
@@ -65,4 +63,4 @@ Notes:
 - {observations about edge cases or fragility}
 ```
 
-If an adapter passes all checks, say PASS and move on. Do not pad the report.
+If a client passes all checks, say PASS and move on. Do not pad the report.
