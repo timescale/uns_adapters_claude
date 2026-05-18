@@ -1,74 +1,84 @@
 """UNS contract validation utilities.
 
-Used by adapters in tests and by the Lead for cross-adapter review.
+Used by clients before writing and by the Lead for cross-client review.
 """
 
 import csv
 import re
 from pathlib import Path
 
-from .models import SparkplugMessage
-
-# Sparkplug B topic pattern
-TOPIC_PATTERN = re.compile(
-    r"^spBv1\.0/[a-z][a-z0-9_]*/(?:DDATA|DBIRTH|DDEATH)/[a-z][a-z0-9_/]*/[a-z][a-z0-9_]*$"
-)
+from .models import Reading
 
 SNAKE_CASE_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
-def validate_topic_path(topic: str) -> list[str]:
-    """Validate a Sparkplug B topic path against the UNS contract.
+def validate_reading(
+    reading: Reading,
+    tag_database_path: Path | None = None,
+) -> list[str]:
+    """Validate a Reading against the UNS contract.
 
-    Returns a list of violations (empty = valid).
+    Checks performed:
+    - tag_name is snake_case
+    - ts is timezone-aware (naive timestamps are rejected)
+    - tag_name exists in tag_database.csv  (when path is supplied)
+    - value is compatible with the tag's metric_type (when tag is found)
+
+    Args:
+        reading:           The Reading to validate.
+        tag_database_path: Path to contracts/tag_database.csv. When None or
+                           missing, the tag-existence and type checks are
+                           skipped (snake_case and tz checks still run).
+
+    Returns:
+        A list of violation strings. Empty list means the reading is valid.
     """
-    violations = []
+    violations: list[str] = []
 
-    if not TOPIC_PATTERN.match(topic):
-        violations.append(f"Topic path does not match Sparkplug B format: {topic}")
+    # --- snake_case ---
+    if not SNAKE_CASE_PATTERN.match(reading.tag_name):
+        violations.append(
+            f"tag_name '{reading.tag_name}' is not snake_case"
+        )
 
-    segments = topic.split("/")
-    for i, segment in enumerate(segments):
-        if i == 0:  # "spBv1.0" — skip
-            continue
-        if i == 2:  # message_type — uppercase is expected
-            continue
-        if not SNAKE_CASE_PATTERN.match(segment):
-            violations.append(f"Segment '{segment}' is not snake_case in topic: {topic}")
+    # --- timezone-aware timestamp ---
+    if (
+        reading.ts.tzinfo is None
+        or reading.ts.tzinfo.utcoffset(reading.ts) is None
+    ):
+        violations.append(
+            f"ts {reading.ts!r} is naive; clients must attach timezone info "
+            "(see CLAUDE.md timestamp rules)"
+        )
 
-    return violations
+    # --- tag database checks ---
+    if tag_database_path is None or not tag_database_path.exists():
+        return violations
 
+    with open(tag_database_path, newline="") as f:
+        tags: dict[str, dict] = {row["tag_name"]: row for row in csv.DictReader(f)}
 
-def validate_message(msg: SparkplugMessage, tag_database_path: Path | None = None) -> list[str]:
-    """Validate a SparkplugMessage against the UNS contract.
+    if reading.tag_name not in tags:
+        violations.append(
+            f"tag_name '{reading.tag_name}' not found in tag database"
+        )
+        return violations  # no point checking type if tag unknown
 
-    Returns a list of violations (empty = valid).
-    """
-    violations = []
+    metric_type = tags[reading.tag_name]["metric_type"]
+    value = reading.value
 
-    # Topic
-    violations.extend(validate_topic_path(msg.topic))
-
-    # Timestamp
-    if msg.timestamp_ms <= 0:
-        violations.append("timestamp_ms must be positive")
-    if msg.timestamp_ms < 1_000_000_000_000:
-        violations.append("timestamp_ms appears to be seconds, not milliseconds")
-
-    # Metrics
-    if not msg.metrics:
-        violations.append("Message has no metrics")
-
-    valid_tags = None
-    if tag_database_path and tag_database_path.exists():
-        with open(tag_database_path) as f:
-            reader = csv.DictReader(f)
-            valid_tags = {row["tag_name"] for row in reader}
-
-    for m in msg.metrics:
-        if not SNAKE_CASE_PATTERN.match(m.name):
-            violations.append(f"Metric name '{m.name}' is not snake_case")
-        if valid_tags and m.name not in valid_tags:
-            violations.append(f"Metric '{m.name}' not found in tag database")
+    if metric_type == "Boolean":
+        if value not in {0.0, 1.0}:
+            violations.append(
+                f"value {value!r} is not compatible with Boolean "
+                "(expected 0.0 or 1.0)"
+            )
+    elif metric_type == "Int32":
+        if not float(value).is_integer():
+            violations.append(
+                f"value {value!r} is not compatible with Int32 "
+                "(must have no fractional part)"
+            )
+    # Float: any finite float is valid; no additional check needed.
 
     return violations

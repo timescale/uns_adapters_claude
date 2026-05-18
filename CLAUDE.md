@@ -1,76 +1,69 @@
 # UNS Data Contract
 
-Every adapter must follow these rules. No exceptions.
-
-## Topic Path Format
-
-```
-spBv1.0/{group_id}/DDATA/{area}/{line}/{cell}
-```
-
-| Segment | Rule | Maps to | Example |
-|---|---|---|---|
-| `group_id` | Site name, snake_case | `site` | `plant_chicago` |
-| `area` | Area identifier, snake_case | `area` | `area_01` |
-| `line` | Line identifier, snake_case | `line` | `line_03` |
-| `cell` | Cell/equipment identifier from tag database | `cell` | `pump_042` |
-
-Full example: `spBv1.0/plant_chicago/DDATA/area_01/line_03/pump_042`
-
-The sixth UNS level (`tag_name`) lives in the payload as `metrics[].name`.
-`enterprise` is constant per deployment, read from
-`contracts/equipment_hierarchy.yaml`.
+Every collection client must follow these rules. No exceptions. A client reads
+from one protocol source (Modbus-TCP, OPC UA, or MQTT) and writes readings
+directly into the shared TimescaleDB tables defined in `db/schema.sql`.
 
 ## Naming Rules
 
-1. **snake_case everywhere.** Topic segments, metric names, equipment IDs.
-   `line_01`, not `line-01`. `pump_042`, not `Pump-042`.
-2. **Match the tag database exactly.** Metric names must correspond 1:1 with
+1. **snake_case everywhere.** Tag names, hierarchy identifiers (area, line,
+   cell), equipment IDs. `line_01`, not `line-01`. `pump_042`, not `Pump-042`.
+2. **Match the tag database exactly.** Tag names must correspond 1:1 with
    `tag_name` in `contracts/tag_database.csv`. No aliases, no abbreviations.
 3. **ISA-95 six-level hierarchy is mandatory.** Every UNS path decomposes to
-   `enterprise/site/area/line/cell/tag_name`.
+   `enterprise/site/area/line/cell/tag_name`. `enterprise` is constant per
+   deployment, read from `contracts/equipment_hierarchy.yaml`.
 
 ## Timestamp Handling
 
-1. **All timestamps MUST be UTC.** Transmit as Unix epoch milliseconds
-   (int64). No ISO strings in payloads.
-2. **If the source provides naive timestamps** (no timezone info), the
-   adapter MUST:
-   - Convert using `source_timezone` from `config/{adapter}.yaml`
-   - Log a warning: `"Naive timestamp from {source}, assuming {timezone}"`
-   - Never silently assume UTC
-3. **If the source provides timezone-aware timestamps**, convert to UTC at
-   the adapter level. The broker sees only UTC.
-4. **Adapters that stamp at read time** (e.g., Modbus, which has no source
-   timestamps) must document the clock source in a code comment.
-5. **Timestamp field name:** `timestamp_ms` in every payload. Not `ts`, not
-   `time`, not `timestamp`.
+Timestamps are the most common source of UNS drift. Every client follows these
+rules:
 
-## Payload Schema
+1. All timestamps MUST be stored as UTC. `tag_history.ts` is TIMESTAMPTZ;
+   write timezone-aware values only.
+2. If the source provides naive timestamps (no timezone info), the client MUST:
+   - Convert using `source_timezone` from `config/{client}.yaml`
+   - Log a warning: "Naive timestamp from {source}, assuming {timezone}"
+   - Never silently assume UTC.
+3. Clients that stamp at read time must document the clock source.
 
-Every DDATA message payload:
+## Write Target
 
-```json
-{
-  "timestamp_ms": 1714003200000,
-  "metrics": [
-    {
-      "name": "temperature_bearing_de",
-      "value": 72.4,
-      "type": "Float",
-      "quality": "GOOD"
-    }
-  ]
-}
-```
+Clients write directly into TimescaleDB. There is no MQTT broker on the data
+path and no separate ingestion service — each client owns its writes.
 
-| Field | Type | Required | Notes |
-|---|---|---|---|
-| `timestamp_ms` | int64 | yes | UTC epoch milliseconds |
-| `metrics[].name` | string | yes | Must match tag database |
-| `metrics[].value` | int, float, or bool | yes | See type mapping |
-| `metrics[].type` | string | yes | `Int32`, `Float`, or `Boolean` |
-| `metrics[].quality` | string | yes | `GOOD`, `BAD`, or `STALE` |
+A reading maps 1:1 to a `tag_history` row. The `Reading` model in
+`shared/models.py` carries `tag_name`, `ts` (timezone-aware `datetime`),
+`value`, and `quality`.
+
+1. **Validate first.** Before writing, every reading MUST pass
+   `shared.validation.validate_reading()` — tag name known, snake_case,
+   `ts` timezone-aware, value type consistent with the tag's `metric_type`.
+2. **Resolve the tag.** Look up `tag_id` from `uns_namespace` by `tag_name`
+   and the ISA-95 hierarchy. A reading whose tag is not in `uns_namespace`
+   is rejected and routed to `dead_letter` — never written to `tag_history`.
+3. **Insert into `tag_history`.** One row per reading:
+   ```sql
+   INSERT INTO tag_history (ts, tag_id, value, quality)
+   VALUES (%s, %s, %s, %s)
+   ON CONFLICT (ts, tag_id) DO NOTHING;
+   ```
+   `ON CONFLICT (ts, tag_id) DO NOTHING` makes writes idempotent — re-reading
+   the same source point never duplicates a row.
+4. **Use `DBWriter` from `shared/db.py`.** Do not hand-roll the connection,
+   the `tag_id` lookup, or the upsert. The `DBWriter` class resolves `tag_id`
+   and batch-upserts; it also routes rejected readings to `dead_letter`.
+
+   ```python
+   from shared.db import DBWriter
+
+   writer = DBWriter(dsn, tag_database_path=Path("contracts/tag_database.csv"))
+   writer.load_namespace()
+   accepted, rejected = writer.write_readings(readings, source="modbus")
+   ```
+
+   `source` is a free-text string identifying the originating client; it is
+   written to `dead_letter.source` for any rejected reading.
 
 ## Type Mapping
 
@@ -78,12 +71,13 @@ Every DDATA message payload:
 |---|---|---|
 | Integer registers (16/32-bit) | `Int32` | Raw register value |
 | Float registers | `Float` | IEEE 754 single precision |
-| Scaled integers | `Float` | Apply scale factor at adapter level |
-| Boolean / discrete | `Boolean` | Coerced to 1.0/0.0 in tag_history |
+| Scaled integers | `Float` | Apply scale factor at the client level |
+| Boolean / discrete | `Boolean` | Coerced to 1.0/0.0 in `tag_history` |
 
-String-valued metrics are out of scope. `tag_history.value` is
-`DOUBLE PRECISION`. If a future tag needs string storage, amend the contract
-and the schema together.
+The contract type is the tag's `metric_type` in `uns_namespace`;
+`validate_reading()` checks each value against it. String-valued readings are
+out of scope — `tag_history.value` is `DOUBLE PRECISION`. If a future tag
+needs string storage, amend the contract and the schema together.
 
 ## Quality Flags
 
@@ -91,10 +85,11 @@ and the schema together.
 |---|---|
 | `GOOD` | Source reports valid data, communication healthy |
 | `BAD` | Source reports error, or read failed |
-| `STALE` | No update within `stale_threshold_ms` (per-adapter config) |
+| `STALE` | No update within `stale_threshold_ms` (per-client config) |
 
 If the source protocol has no quality information (e.g., Modbus), default to
-`GOOD` on successful read and `BAD` on failure.
+`GOOD` on successful read and `BAD` on failure. `quality` is written to
+`tag_history.quality` as-is.
 
 ## Contract Artifacts — Source of Truth
 
@@ -103,4 +98,5 @@ If the source protocol has no quality information (e.g., Modbus), default to
 | `contracts/tag_database.csv` | Canonical tag names, cell/area/line, metric types |
 | `contracts/equipment_hierarchy.yaml` | ISA-95 hierarchy (enterprise through cell) |
 | `contracts/register_map.csv` | Modbus register-to-tag mapping with scale factors |
-| `contracts/historian_tag_map.csv` | Historian proprietary tags to contract tag names |
+| `contracts/opcua_node_map.csv` | OPC UA node IDs to contract tag names |
+| `contracts/mqtt_topic_map.csv` | Source MQTT topics to contract tag names |

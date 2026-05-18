@@ -4,9 +4,13 @@
 -- Aligned with the canonical TigerData UNS schema from
 -- "Ask Your Factory Floor Anything: Structuring Industrial Data for AI Agents."
 --
--- Adapters emit Sparkplug B messages to the MQTT broker. The MQTT→SQL ingester
--- parses the Sparkplug topic into (enterprise, site, area, line, cell, tag_name)
--- and lands readings in tag_history after resolving tag_id from uns_namespace.
+-- V7 direct-write architecture: collection clients (Modbus, OPC UA, MQTT) read
+-- from their respective sources, resolve tag_id from uns_namespace, and insert
+-- readings into tag_history directly:
+--   INSERT INTO tag_history (ts, tag_id, value, quality)
+--   ... ON CONFLICT (ts, tag_id) DO NOTHING
+-- No standalone ingester; tag-id resolution and batch-upsert logic live in each
+-- client.
 --
 -- See: https://www.tigerdata.com/blog/ask-your-factory-floor-anything-structuring-industrial-data-for-ai-agents
 
@@ -66,7 +70,7 @@ SELECT create_hypertable(
 CREATE TABLE dead_letter (
     id          BIGSERIAL   PRIMARY KEY,
     received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    topic       TEXT,
+    source      TEXT,
     payload     JSONB,
     reason      TEXT        NOT NULL
 );
