@@ -14,6 +14,10 @@
 --
 -- See: https://www.tigerdata.com/blog/ask-your-factory-floor-anything-structuring-industrial-data-for-ai-agents
 
+-- Clean-slate apply: this schema is idempotent so setup.sh can be re-run.
+-- NOTE: wipes all existing data — intentional for the tutorial's clean-slate flow.
+DROP TABLE IF EXISTS dead_letter, tag_history, uns_namespace CASCADE;
+
 -- 1. ISA-95 namespace + tag metadata. Not time-series — one row per unique
 --    (enterprise, site, area, line, cell, tag_name) tuple.
 CREATE TABLE uns_namespace (

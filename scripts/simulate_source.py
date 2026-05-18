@@ -4,9 +4,9 @@ V7 Source Simulator — stands up three fake industrial sources in-process.
 
 Sources
 -------
-  Modbus-TCP server  (pymodbus)  holding registers from contracts/register_map.csv
-  OPC UA server      (asyncua)   variable nodes    from contracts/opcua_node_map.csv
-  MQTT publisher     (paho-mqtt) JSON payloads     to   contracts/mqtt_topic_map.csv
+  Modbus-TCP server  (pymodbus 3.13)  holding registers from contracts/register_map.csv
+  OPC UA server      (asyncua 1.1.x)  variable nodes    from contracts/opcua_node_map.csv
+  MQTT publisher     (paho-mqtt 2.x)  JSON payloads     to   contracts/mqtt_topic_map.csv
 
 No hardware or extra Docker services required.  The Modbus and OPC UA servers
 bind to the addresses in .env (MODBUS_SOURCE_HOST/PORT, OPCUA_SOURCE_HOST/PORT).
@@ -45,12 +45,9 @@ from pathlib import Path
 import paho.mqtt.client as mqtt
 from asyncua import Server as OpcUaServer, ua
 from dotenv import load_dotenv
-from pymodbus.datastore import (
-    ModbusSequentialDataBlock,
-    ModbusServerContext,
-    ModbusSlaveContext,
-)
 from pymodbus.server import StartAsyncTcpServer
+from pymodbus.simulator.simdata import DataType, SimData
+from pymodbus.simulator.simdevice import SimDevice
 
 load_dotenv()
 
@@ -60,6 +57,9 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 log = logging.getLogger("simulator")
+
+# Suppress verbose asyncua internal init messages (add_node / session noise)
+logging.getLogger("asyncua").setLevel(logging.WARNING)
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -146,7 +146,7 @@ def fake_value(metric_type: str, tag_name: str = "") -> float | int | bool:
     return round(random.uniform(10.0, 100.0), 2)
 
 
-def cast_for_otype(value: float | int | bool, metric_type: str) -> float | int | bool:
+def cast_for_vtype(value: float | int | bool, metric_type: str) -> float | int | bool:
     """Cast a fake value to the Python type expected by the OPC UA VariantType."""
     if metric_type == "Boolean":
         return bool(value)
@@ -156,7 +156,7 @@ def cast_for_otype(value: float | int | bool, metric_type: str) -> float | int |
 
 
 # ===========================================================================
-# Modbus helpers
+# Modbus helpers  (pymodbus 3.13 SimDevice / SimData API)
 # ===========================================================================
 
 def _encode_registers(
@@ -165,12 +165,12 @@ def _encode_registers(
     scale: float,
     offset: float,
 ) -> list[int]:
-    """Convert a physical value to one or two 16-bit Modbus register words.
+    """Convert a physical value to one or two 16-bit Modbus holding-register words.
 
-    Encoding follows the register_map.csv conventions:
+    Encoding follows register_map.csv conventions:
       raw = (physical - offset) / scale_factor
-      int16  → one word, big-endian two's complement
-      float32 → two words, IEEE 754 big-endian (high word first)
+      int16   → one word, unsigned 16-bit
+      float32 → two words, IEEE 754 big-endian, high word first
       bool    → one word, 0 or 1
     """
     if data_type == "bool":
@@ -192,33 +192,22 @@ def _encode_registers(
     return [0]
 
 
-def build_modbus_slave(reg_map: list[dict]) -> ModbusSlaveContext:
-    """Create a Modbus slave with a zero-filled holding-register block.
-
-    Block size covers the highest register address in register_map.csv + headroom.
-    Wire address = CSV register_address - 40001  (0-indexed, FC3).
-    """
-    max_wire_addr = max(
-        int(row["register_address"]) - 40001 + int(row["register_count"])
-        for row in reg_map
-    )
-    block_size = max(max_wire_addr + 10, 200)
-    hr_block = ModbusSequentialDataBlock(0, [0] * block_size)
-    return ModbusSlaveContext(hr=hr_block)
-
-
-def populate_modbus_registers(
-    slave: ModbusSlaveContext,
+def _update_modbus_store(
+    store: dict[int, int],
     reg_map: list[dict],
     tag_db: dict,
 ) -> None:
-    """Write a fresh sweep of fake values into all holding registers."""
+    """Recompute fresh fake values into the Modbus register store dict.
+
+    store maps wire_address → 16-bit word value.
+    Wire address = CSV register_address - 40001  (0-indexed, FC3).
+    """
     for row in reg_map:
         tag = tag_db.get(row["tag_name"])
         if tag is None:
             log.warning("[modbus] tag '%s' not in tag_database — skipping", row["tag_name"])
             continue
-        wire_addr = int(row["register_address"]) - 40001   # 0-indexed
+        wire_addr = int(row["register_address"]) - 40001
         phys = fake_value(tag["metric_type"], row["tag_name"])
         words = _encode_registers(
             phys,
@@ -226,11 +215,54 @@ def populate_modbus_registers(
             float(row["scale_factor"]),
             float(row["offset"]),
         )
-        slave.setValues(3, wire_addr, words)   # fc=3: holding registers
+        for i, w in enumerate(words):
+            store[wire_addr + i] = w
+
+
+def build_modbus_device(
+    reg_map: list[dict],
+    tag_db: dict,
+    store: dict[int, int],
+) -> SimDevice:
+    """Build a pymodbus SimDevice for the Modbus-TCP server.
+
+    The device exposes a block of holding registers large enough to cover
+    all addresses in register_map.csv.  On every read request, the `action`
+    callback injects current values from `store`.  The sweep loop updates
+    `store` independently; no locking needed (single asyncio event loop).
+    """
+    max_wire_addr = max(
+        int(r["register_address"]) - 40001 + int(r["register_count"])
+        for r in reg_map
+    )
+    block_size = max(max_wire_addr + 10, 200)
+
+    # Pre-populate store with initial values
+    _update_modbus_store(store, reg_map, tag_db)
+
+    async def action(
+        fc: int,
+        start_addr: int,
+        address: int,
+        count: int,
+        current_registers: list[int],
+        set_values: list[int] | list[bool] | None,
+    ) -> None:
+        """Inject current fake values for every holding-register read."""
+        if set_values is not None:
+            return  # ignore write requests
+        for i in range(len(current_registers)):
+            current_registers[i] = store.get(address + i, 0)
+
+    return SimDevice(
+        id=1,
+        simdata=[SimData(address=0, count=block_size, values=0, datatype=DataType.REGISTERS)],
+        action=action,
+    )
 
 
 # ===========================================================================
-# OPC UA helpers
+# OPC UA helpers  (asyncua 1.1.x)
 # ===========================================================================
 
 async def setup_opcua_nodes(
@@ -251,10 +283,10 @@ async def setup_opcua_nodes(
             continue
 
         vtype = _VARIANT_TYPES.get(row["data_type"], ua.VariantType.Double)
-        initial = cast_for_otype(fake_value(tag["metric_type"], tag_name), tag["metric_type"])
+        initial = cast_for_vtype(fake_value(tag["metric_type"], tag_name), tag["metric_type"])
 
-        # node_id (e.g. "TK101.TEMP") becomes a String NodeId: ns=ns_idx;s=TK101.TEMP
-        # browse name matches node_id — clients can also discover via browse path.
+        # node_id (e.g. "TK101.TEMP") → String NodeId: ns=ns_idx;s=TK101.TEMP
+        # Clients look up: client.get_node(ua.NodeId("TK101.TEMP", resolved_ns_idx))
         var = await obj_node.add_variable(ns_idx, row["node_id"], initial, vtype)
         await var.set_writable()
         node_vars[tag_name] = (var, vtype)
@@ -269,12 +301,12 @@ async def update_opcua_nodes(
     """Write a fresh sweep of fake values to all OPC UA nodes."""
     for tag_name, (var, vtype) in node_vars.items():
         tag = tag_db[tag_name]
-        new_val = cast_for_otype(fake_value(tag["metric_type"], tag_name), tag["metric_type"])
+        new_val = cast_for_vtype(fake_value(tag["metric_type"], tag_name), tag["metric_type"])
         await var.write_value(ua.DataValue(ua.Variant(new_val, vtype)))
 
 
 # ===========================================================================
-# MQTT helpers
+# MQTT helpers  (paho-mqtt 2.x)
 # ===========================================================================
 
 def publish_mqtt_messages(
@@ -287,8 +319,8 @@ def publish_mqtt_messages(
     Payload schema:
         {"ts_ms": <epoch-ms UTC>, "tag_name": "...", "value": ..., "quality": "GOOD"}
 
-    ts_ms is always UTC epoch milliseconds — the mqtt-client does not need
-    timezone conversion (source_timezone: UTC in config/mqtt.yaml).
+    ts_ms is always UTC epoch-ms — the mqtt-client needs no timezone conversion
+    (source_timezone: UTC in config/mqtt.yaml).
     """
     ts_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
     for row in mqtt_map:
@@ -322,11 +354,10 @@ async def main_async(args: argparse.Namespace) -> None:
     mqtt_map = load_mqtt_map()
 
     # -----------------------------------------------------------------------
-    # 2. Modbus datastore
+    # 2. Modbus: shared store dict + SimDevice with action callback
     # -----------------------------------------------------------------------
-    modbus_slave = build_modbus_slave(reg_map)
-    modbus_context = ModbusServerContext(slaves=modbus_slave, single=True)
-    populate_modbus_registers(modbus_slave, reg_map, tag_db)
+    modbus_store: dict[int, int] = {}
+    modbus_device = build_modbus_device(reg_map, tag_db, modbus_store)
 
     # -----------------------------------------------------------------------
     # 3. OPC UA server — init before entering the async-context-manager
@@ -354,13 +385,14 @@ async def main_async(args: argparse.Namespace) -> None:
 
     # -----------------------------------------------------------------------
     # 5. Modbus TCP server as a background asyncio task
+    #    pymodbus 3.13: pass SimDevice directly to StartAsyncTcpServer
     # -----------------------------------------------------------------------
     modbus_task = asyncio.create_task(
-        StartAsyncTcpServer(context=modbus_context, address=(MODBUS_HOST, MODBUS_PORT))
+        StartAsyncTcpServer(context=modbus_device, address=(MODBUS_HOST, MODBUS_PORT))
     )
 
     # -----------------------------------------------------------------------
-    # 6. Signal handling — set a stop event for clean shutdown
+    # 6. Signal handling — stop event for clean shutdown
     # -----------------------------------------------------------------------
     loop = asyncio.get_running_loop()
     stop_event = asyncio.Event()
@@ -385,7 +417,11 @@ async def main_async(args: argparse.Namespace) -> None:
                       f"  ({len(mqtt_map)} topics, area_02)")
             else:
                 print(f"  mqtt    OFFLINE — start Mosquitto and retry")
-            mode = f"{args.iterations} sweeps" if args.iterations > 0 else "continuous (Ctrl+C to stop)"
+            mode = (
+                f"{args.iterations} sweeps"
+                if args.iterations > 0
+                else "continuous (Ctrl+C to stop)"
+            )
             print(f"\n  rate={args.rate}s  mode={mode}\n")
 
             while (
@@ -393,7 +429,7 @@ async def main_async(args: argparse.Namespace) -> None:
                 and (args.iterations == 0 or sweep < args.iterations)
             ):
                 # Update all three sources
-                populate_modbus_registers(modbus_slave, reg_map, tag_db)
+                _update_modbus_store(modbus_store, reg_map, tag_db)
                 await update_opcua_nodes(opcua_node_vars, tag_db)
                 if mqtt_ok:
                     publish_mqtt_messages(mqtt_paho, mqtt_map, tag_db)
