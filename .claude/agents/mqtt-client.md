@@ -39,9 +39,11 @@ insert can keep up. Batching and back-pressure genuinely matter here:
 
 - Buffer incoming readings and flush to `DBWriter` in batches, not one write
   per message.
-- Bound the buffer. If writes fall behind, apply back-pressure (pause the
-  subscription or shed load to `dead_letter`) rather than letting memory grow
-  without limit.
+- Bound the buffer. Under sustained overload, drop the oldest buffered
+  readings and log a warning — never let memory grow without limit. Do not
+  "shed" overflow to `dead_letter`: `DBWriter` routes only validation failures
+  there, and the `source` label never changes where a valid reading lands —
+  every valid reading goes to `tag_history`.
 - Resolve each source topic to a contract tag name using
   `contracts/mqtt_topic_map.csv`. A topic with no mapping is rejected.
 

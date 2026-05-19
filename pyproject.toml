@@ -2,7 +2,7 @@
 name = "uns-client-tutorial"
 version = "0.1.0"
 description = "Agent Teams tutorial: parallel multi-protocol UNS collection client development"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 dependencies = [
     "paho-mqtt>=2.1.0",
     "psycopg[binary]>=3.3.2",

@@ -50,6 +50,9 @@ scale factors are in `contracts/register_map.csv`. After scaling, the reading's
 - Read config from `config/modbus.yaml` using PyYAML
 - Load register-to-tag mapping from `contracts/register_map.csv`
 - Poll-based loop using `poll_interval_ms` from config
+- `pymodbus` 3.13+ read calls (`read_holding_registers` and siblings) take the
+  keyword `device_id=`, not the older `slave=` — passing `slave=` raises
+  `TypeError`
 - Apply scale factors before building each `Reading`
 - Set quality to `GOOD` on successful read, `BAD` on read failure
 - Validate every reading with `validate_reading()`, then write with

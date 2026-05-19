@@ -6,3 +6,6 @@
 - snake_case for files, functions, variables. PascalCase for classes.
 - Type hints on all function signatures.
 - Imports: standard library, then third-party, then local (`shared.*`).
+- Each client runs standalone: call `load_dotenv()` at startup to load its own
+  environment, and provide an `if __name__ == "__main__":` entry point. Never
+  assume environment variables are already sourced.
