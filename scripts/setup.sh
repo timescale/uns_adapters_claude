@@ -98,6 +98,7 @@ info "Environment loaded"
 
 echo ""
 echo "Starting MQTT broker..."
+docker rm -f uns-mqtt-broker 2>/dev/null || true
 docker compose up -d --quiet-pull 2>/dev/null
 sleep 2
 
