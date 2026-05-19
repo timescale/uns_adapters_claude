@@ -248,11 +248,18 @@ def build_modbus_device(
         current_registers: list[int],
         set_values: list[int] | list[bool] | None,
     ) -> None:
-        """Inject current fake values for every holding-register read."""
+        """Inject current fake values for the requested holding-register range.
+
+        pymodbus 3.13 passes the *entire* register block as current_registers.
+        The server reads back the response from current_registers[offset + i]
+        where offset = address - start_addr.  We must therefore write to that
+        exact position, not to index i.
+        """
         if set_values is not None:
             return  # ignore write requests
-        for i in range(len(current_registers)):
-            current_registers[i] = store.get(address + i, 0)
+        offset = address - start_addr   # position of first requested reg in the block
+        for i in range(count):
+            current_registers[offset + i] = store.get(address + i, 0)
 
     return SimDevice(
         id=1,
