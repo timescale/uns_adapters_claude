@@ -292,9 +292,13 @@ async def setup_opcua_nodes(
         vtype = _VARIANT_TYPES.get(row["data_type"], ua.VariantType.Double)
         initial = cast_for_vtype(fake_value(tag["metric_type"], tag_name), tag["metric_type"])
 
-        # node_id (e.g. "TK101.TEMP") → String NodeId: ns=ns_idx;s=TK101.TEMP
-        # Clients look up: client.get_node(ua.NodeId("TK101.TEMP", resolved_ns_idx))
-        var = await obj_node.add_variable(ns_idx, row["node_id"], initial, vtype)
+        # Explicit string NodeId from the contract CSV: ns=ns_idx;s=<node_id>
+        # Passing ua.NodeId as the first argument forces asyncua to use it verbatim
+        # instead of auto-assigning a numeric NodeId (e.g. ns=2;i=1001).
+        # Clients address nodes exactly as declared: client.get_node("ns=2;s=TK101.TEMP")
+        nodeid = ua.NodeId(row["node_id"], ns_idx)
+        bname = ua.QualifiedName(row["node_id"], ns_idx)
+        var = await obj_node.add_variable(nodeid, bname, initial, vtype)
         await var.set_writable()
         node_vars[tag_name] = (var, vtype)
 
