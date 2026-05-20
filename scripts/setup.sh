@@ -42,12 +42,6 @@ command -v claude >/dev/null 2>&1 || warn "Claude Code not found. Install to run
 if command -v claude >/dev/null 2>&1; then
     CC_VER=$(claude --version 2>/dev/null | grep -oP '\d+\.\d+\.\d+' | head -1)
     info "Claude Code $CC_VER"
-    if [ -n "$CC_VER" ] && [ "$(echo "$CC_VER" | tr '.' '\n' | head -3 | paste -sd'.')" != "" ]; then
-        # Warn if not the tested version
-        if [ "$CC_VER" != "2.1.110" ]; then
-            warn "Tested with 2.1.110. You have $CC_VER — Agent Teams behavior may differ."
-        fi
-    fi
 fi
 
 command -v tmux >/dev/null 2>&1 || warn "tmux not found. Required for Agent Teams split-pane mode."

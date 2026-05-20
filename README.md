@@ -68,50 +68,12 @@ An Agent Team builds one collection client per protocol — Modbus-TCP, OPC UA, 
 
 ## Requirements
 
-- Python 3.11+ with [uv](https://docs.astral.sh/uv/)
+- [uv](https://docs.astral.sh/uv/) — manages Python and all dependencies; `uv sync` is the only install step (`.python-version` pins 3.13; `uv.lock` makes installs deterministic)
 - [Docker](https://www.docker.com/) — for the Mosquitto MQTT broker (one of the three sources)
 - `psql` (`postgresql-client`)
 - A [Tiger Cloud](https://www.tigerdata.com/) instance (free tier works) — or any TimescaleDB service URL
-- Claude Code 2.1.110 with Agent Teams enabled ([see version note below](#claude-code-version))
+- Claude Code with Agent Teams enabled
 - [tmux](https://github.com/tmux/tmux/wiki) — required for Agent Teams split-pane mode
-
-### Claude Code version
-
-Pin to **Claude Code 2.1.110**. Versions 2.1.112+ [corrupt the tmux lead pane during Agent Teams approval modals](https://github.com/anthropics/claude-code/issues/52431); 2.1.110 is the last release tested with this tutorial.
-
-Install the pinned version:
-
-```bash
-curl -fsSL https://claude.ai/install.sh | bash -s -- --version 2.1.110
-```
-
-Disable auto-updates so the pin holds across sessions:
-
-```bash
-echo 'export DISABLE_AUTOUPDATER=1' >> ~/.bashrc
-export DISABLE_AUTOUPDATER=1
-```
-
-Verify:
-
-```bash
-claude --version
-# 2.1.110 (Claude Code)
-```
-
-#### Returning to the latest version
-
-When you're done with the tutorial, undo the pin:
-
-```bash
-# Remove the auto-update guard from ~/.bashrc (or zshrc), then unset it for the current shell
-unset DISABLE_AUTOUPDATER
-
-# Reinstall the latest release
-curl -fsSL https://claude.ai/install.sh | bash
-
-claude --version
-```
 
 ## Quick Start
 
@@ -121,7 +83,7 @@ claude --version
 bash scripts/setup.sh
 ```
 
-One command covers everything: checks prerequisites, installs Python dependencies (`uv sync`), creates `.env` from `.env.example` (prompts for your Tiger Data service URL if needed), starts the Mosquitto broker, applies `db/schema.sql` to your TimescaleDB instance, and seeds `uns_namespace` from `contracts/`.
+One command covers everything: checks prerequisites, installs Python dependencies (`uv sync`), creates `.env` from `.env.example` (prompts for your Tiger Data service URL if needed), starts the Mosquitto broker, applies `db/schema.sql` to your TimescaleDB instance, and seeds `uns_namespace` from `contracts/`. Safe to re-run — idempotent throughout.
 
 ### 2. Start the simulator
 
