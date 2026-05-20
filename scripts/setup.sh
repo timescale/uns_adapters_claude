@@ -108,7 +108,7 @@ echo ""
 echo "Applying database schema..."
 psql "$TIMESCALE_SERVICE_URL" -f db/schema.sql -q 2>/dev/null && \
     info "Schema applied (uns_namespace, tag_history, dead_letter)" || \
-    warn "Schema may already exist (re-run is safe)"
+    warn "Schema apply failed — check TIMESCALE_SERVICE_URL connectivity"
 
 # ── Seed namespace ─────────────────────────────────────────────────────
 

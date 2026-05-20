@@ -124,7 +124,7 @@ The Lead is your main Claude Code session — no separate orchestrator agent. Th
 
 ### 4. Verify the UNS
 
-Open the Tiger Cloud SQL Editor and confirm data landed correctly:
+Open the Tiger Cloud SQL editor and confirm data landed correctly:
 
 ```sql
 -- Full UNS namespace: six-level ISA-95 hierarchy materialized in Postgres
@@ -171,7 +171,7 @@ SELECT source, reason, count(*) FROM dead_letter GROUP BY 1, 2;
 
 ### 5. Explore the failure path (optional)
 
-Stay in the same session and inject a naive-timestamp leak via the Tiger Cloud SQL Editor:
+Stay in the same session and inject a naive-timestamp leak via the Tiger Cloud SQL editor:
 
 ```sql
 -- Shift area_02 timestamps back 5 hours
